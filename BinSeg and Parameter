@@ -1,0 +1,113 @@
+library(changepoint)
+library(zoo)
+library(base)
+library(gstat)
+library(datasets)
+library(pastecs)
+library(ggplot2)
+library(reshape2)
+
+#Spesial BinSeg
+
+Indon<-read.table('vaksinlengkap.txt',header=TRUE)
+Indon
+attach(Indon)
+Lai.default <- cpt.var(Indon[, 2], method = "BinSeg")
+plot(Lai.default, pch = 20, col="blue",cpt.col = "black", cpt.width = 2,xlab = "Days",ylab="Case number",main="INDONESIA")
+cpts(Lai.default)
+coef(Lai.default)
+x= 1:397
+y=Indon[, 2]
+lo <- loess(y~x)
+xl <- seq(min(x),max(x), (max(x) - min(x))/100)
+out = predict(lo,xl)
+lines(xl, out, col='red', lwd=2)
+infl <- c(FALSE, diff(diff(out)>0)!=0)
+points(xl[infl ], out[infl ], col="green",lwd=4,xlab="Days",ylab="Case number")
+text(xl[infl ], out[infl ], paste(round(xl[infl ], 2), round(out[infl ], 2), sep=", "), cex=0.7,pos=3,srt = 45)
+legend("topleft",cex = 0.8,c("Actual Data","BinSeg Method","Interpolation Method"),bty="o",lwd=c(2,2,2),lty=c(1,1,1),col=c("blue","black","red"),bg='white')
+a=Indon[376,]
+a
+==============================================================
+#single
+data.corona <- read.table("vaksinlengkapfeb.txt", header=TRUE)
+head(data.corona)
+data.corona
+days <- 1:22
+data.corona <- cbind(data.corona,days)
+data.corona$Rec.cum<- cumsum(data.corona$Recovered)
+data.corona$Dead.cum<- cumsum(data.corona$Dead)
+
+Infected <- as.numeric(data.corona$Infected)
+Infected
+Day <- as.numeric(data.corona$days)
+Day
+N <- 700000
+R <-as.numeric(data.corona$Recovered)
+R
+V <-as.numeric(data.corona$Vaksin)
+V
+D <-as.numeric(data.corona$Dead)
+D
+Is <-as.numeric(data.corona$Is)
+Is
+Iv <-as.numeric(data.corona$Iv)
+Iv
+
+
+library(deSolve)
+SVIRD <- function(time, state, parameters){
+  par <- as.list(c(state, parameters))
+  with(par,{
+    dS <- -eta*S-beta/N*S*Is
+    dV <- eta*S-delta/N*Iv*V	
+    dIs <- beta/N*Is*S-theta*Is-alpha*Is
+    dIv <- delta/N*Iv*V-gamma*Iv	
+    dR <- gamma*Iv+theta*Is
+    dD <- alpha*Is
+    list(c(dS,dV,dIs,dIv,dR,dD))
+  })
+}
+
+init <- c(S=N-V[1]-Is[1]-Iv[1]-R[1]-D[1], V=V[1], Is=Is[1], Iv=Iv[1], R=R[1], D=D[1])
+init
+RSS <- function(parameters){
+  names(parameters) <- c("eta","beta","delta","theta","gamma","alpha")
+  out <- ode(y=init, times=Day, func=SVIRD,parms=parameters)
+  fit <- out[,5]
+  sum(Infected-fit)^2
+}
+
+opt <- optim(c(0.5,0.5,0.5,0.3,0.5,0.2),RSS,method="L-BFGS-B",lower=c(0,0,0,0,0,0),upper = c(1,1,1,1,1,1))
+opt
+opt$message
+opt_par <- setNames(opt$par,c("eta","beta","delta","theta","gamma","alpha"))
+opt_par
+
+t <- 1:50
+t
+fit <- data.frame(ode(y=init, times=t,func=SVIRD, parms = opt_par))
+fit
+plot(fit[, 2], cex = 0.8,pch = 20, type="l", col="blue", xlab = "Days",ylab="Case number",main="INDONESIA",,ylim=c(0,800000))
+lines(fit[, 4], cex = 0.8,pch = 20, type="l", col="red")
+lines(fit[, 5], cex = 0.8,pch = 20, type="l", col="purple")
+lines(fit[, 6], cex = 0.8,pch = 20, type="l", col="green")
+lines(fit[, 3], cex = 0.8,pch = 20, type="l", col="orange")
+lines(fit[, 7], cex = 0.8,pch = 20, type="l", col="black")
+legend("topright",cex = 0.8,c("Susceptible","Infected non-vaccinated","Infected vaccinated","Recovered","Vaccinated","Dead"),bty="o",lwd=c(2,2,2,2,2,2),lty=c(1,1,1,1,1,1),col=c("blue","purple","red","green","orange","black"),bg='white')
+
+==================================================================
+#Perbandingan Prediksi dan Aktual
+
+IndoPR2<- read.table("IndoPR2.txt", header=TRUE)
+IndoPR2
+t <- 1:100
+t
+fit <- data.frame(ode(y=init, times=t,func=SVIRD, parms = opt_par))
+fit
+InfTotal=fit[,4]+fit[,5]*0.75
+InfTotal
+plot(InfTotal, cex = 0.8,pch = 20, type="l", col="red", lwd=2,xlab = "Days",ylab="Case number",main="INDONESIA",,ylim=c(0,70000))
+lines(IndoPR2[, 3], cex = 0.8,pch = 20, type="o", col="blue")
+legend("topright",cex = 0.8,c("Infected","Actual data"),bty="o",lwd=c(2,2),lty=c(1,1),col=c("red","blue"),bg='white')
+==================================================================
